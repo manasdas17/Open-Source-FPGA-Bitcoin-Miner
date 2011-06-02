@@ -22,12 +22,13 @@
 package ifneeded TclCurl 7.19.6 [list load TclCurl7196.dll]\n[list source tclcurl.tcl]
 package require TclCurl
 package require json
+source account.tcl
 
 set instances [dict create]
 
 proc find_instances {} {
 	global instances
-	foreach instance [get_insystem_source_probe_instance_info -hardware_name "USB-Blaster \[USB-0\]" -device_name "@1: EP3C120/EP4CE115 (0x020F70DD)"] {
+	foreach instance [get_insystem_source_probe_instance_info -hardware_name "USB-Blaster \[USB-0\]" -device_name $device_name] {
 		dict set instances [lindex $instance 3] [lindex $instance 0]
 	}
 }
@@ -111,9 +112,10 @@ proc get_work {} {
 proc wait_for_golden_ticket {timeout} {
 	set begin_time [clock seconds]
 	
-	puts "Current nonce"
+	set current_r_nonce [read_instance NONC]
+	puts "Current running nonce $current_r_nonce"
 	set current_nonce [read_instance GNON]
-	puts $current_nonce
+	puts "Current nonce $current_nonce"
 
 	puts "FPGA is now searching for lottery ticket..."
 
@@ -124,6 +126,11 @@ proc wait_for_golden_ticket {timeout} {
 		
 		if { [expr {[clock seconds] - $begin_time}] >= $timeout } {
 			return ""
+		}
+		if { [expr {[clock seconds] - $begin_time}] >= 10 } {
+			set begin_time [clock seconds]
+			set current_r_nonce [read_instance NONC]
+			puts "Current running nonce $current_r_nonce"
 		}
 	}
 
@@ -158,31 +165,33 @@ proc submit_work {data nonce} {
 
 find_instances
 
-start_insystem_source_probe -hardware_name "USB-Blaster \[USB-0\]" -device_name "@1: EP3C120/EP4CE115 (0x020F70DD)"
+start_insystem_source_probe -hardware_name "USB-Blaster \[USB-0\]" -device_name $device_name
 
-
-############## EDIT THESE ##############
-set url "http://btcguild.com:8332"
-set userpass "youremailhere@example.com:yourpasswordhere"
-########################################
-
+set nonce 0
+while {0} {
+	set last_nonce $nonce
+	set nonce [read_instance NONC]
+	set nonce [expr 0x$nonce]
+	puts "Current running nonce [expr $nonce - $last_nonce]"
+	after 1000
+}
 
 while {1} {
 	# Get new work
 	if [catch {set data [get_work]}] {
-		puts "ERROR! Waiting to try again ..."
+		puts "ERROR! (get_work) Waiting to try again ..."
 		after 20000
 		continue
 	}
 	
 	if [catch {
-		set golden_nonce [wait_for_golden_ticket 20]
+		set golden_nonce [wait_for_golden_ticket 700]
 	
 		if { [string compare $golden_nonce ""] != 0 } {
 		submit_work $data $golden_nonce
 		}
 	}] {
-		puts "ERROR! Waiting to try again ..."
+		puts "ERROR! (wait_for_golden_ticket) Waiting to try again ..."
 		after 20000
 		continue
 	}
