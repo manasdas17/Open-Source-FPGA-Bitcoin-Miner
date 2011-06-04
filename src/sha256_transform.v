@@ -23,7 +23,7 @@
 `timescale 1ns/1ps
 
 // A quick define to help index 32-bit words inside a larger register.
-`define IDX(x) (((x)+1)*(32)-1):((x)*(32))
+`define IDX(x) ((x)*32) +: 32
 
 
 // Perform a SHA-256 transformation on the given 512-bit data, and 256-bit
@@ -96,18 +96,15 @@ module sha256_transform #(
 
 	endgenerate
 
+	integer j;
 	always @ (posedge clk)
 	begin
-		if (!feedback)
+		for (j = 0; j < 8 ; j = j + 1)
 		begin
-			tx_hash[`IDX(0)] <= rx_state[`IDX(0)] + HASHERS[64/LOOP-6'd1].state[`IDX(0)];
-			tx_hash[`IDX(1)] <= rx_state[`IDX(1)] + HASHERS[64/LOOP-6'd1].state[`IDX(1)];
-			tx_hash[`IDX(2)] <= rx_state[`IDX(2)] + HASHERS[64/LOOP-6'd1].state[`IDX(2)];
-			tx_hash[`IDX(3)] <= rx_state[`IDX(3)] + HASHERS[64/LOOP-6'd1].state[`IDX(3)];
-			tx_hash[`IDX(4)] <= rx_state[`IDX(4)] + HASHERS[64/LOOP-6'd1].state[`IDX(4)];
-			tx_hash[`IDX(5)] <= rx_state[`IDX(5)] + HASHERS[64/LOOP-6'd1].state[`IDX(5)];
-			tx_hash[`IDX(6)] <= rx_state[`IDX(6)] + HASHERS[64/LOOP-6'd1].state[`IDX(6)];
-			tx_hash[`IDX(7)] <= rx_state[`IDX(7)] + HASHERS[64/LOOP-6'd1].state[`IDX(7)];
+		if (!feedback)
+			begin
+				tx_hash[`IDX(j)] <= rx_state[`IDX(j)] + HASHERS[64/LOOP-6'd1].state[`IDX(j)];
+			end
 		end
 	end
 
