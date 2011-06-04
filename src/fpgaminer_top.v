@@ -121,7 +121,7 @@ module fpgaminer_top (osc_clk);
 		reg reset = 1'b0;	// NOTE: Reset is not currently used in the actual FPGA; for simulation only.
 	`endif
 
-	assign cnt_next =  reset ? 6'd0 : (LOOP == 1) ? 6'd0 : (cnt + 6'd1) & (LOOP-1);
+	assign cnt_next =  reset ? 6'd0 : (cnt + 6'd1) & (LOOP-6'd1);
 	// On the first count (cnt==0), load data from previous stage (no feedback)
 	// on 1..LOOP-1, take feedback from current stage
 	// This reduces the throughput by a factor of (LOOP), but also reduces the design size by the same amount
