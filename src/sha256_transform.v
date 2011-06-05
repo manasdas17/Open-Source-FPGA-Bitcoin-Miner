@@ -36,7 +36,8 @@
 // 2 implies a half-unrolled loop, with 32 round modules and calculating
 // a full hash in 2 clock cycles. And so forth.
 module sha256_transform #(
-	parameter LOOP = 6'd4
+	parameter LOOP = 6'd4,
+	parameter MERGE = 6'd1
 ) (
 	input clk,
 	input feedback,
@@ -70,23 +71,23 @@ module sha256_transform #(
 
 	generate
 
-		for (i = 0; i < 64/LOOP; i = i + 1) begin : HASHERS
+		for (i = 0; i < 64/LOOP/MERGE; i = i + 1) begin : HASHERS
 			wire [511:0] W;
 			wire [255:0] state;
 
 			if(i == 0)
-				sha256_digester U (
+				sha256_unpipe #(.MERGE(MERGE)) U (
 					.clk(clk),
-					.k(Ks[32*(63-cnt) +: 32]),
+					.k(Ks[32*(63-cnt) +: (32*MERGE)]),
 					.rx_w(feedback ? W : rx_input),
 					.rx_state(feedback ? state : rx_state),
 					.tx_w(W),
 					.tx_state(state)
 				);
 			else
-				sha256_digester U (
+				sha256_unpipe #(.MERGE(MERGE)) U (
 					.clk(clk),
-					.k(Ks[32*(63-LOOP*i-cnt) +: 32]),
+					.k(Ks[32*(63-(LOOP*MERGE*i+cnt)) +: (32*MERGE)]),
 					.rx_w(feedback ? W : HASHERS[i-1].W),
 					.rx_state(feedback ? state : HASHERS[i-1].state),
 					.tx_w(W),
@@ -103,7 +104,7 @@ module sha256_transform #(
 		begin
 		if (!feedback)
 			begin
-				tx_hash[`IDX(j)] <= rx_state[`IDX(j)] + HASHERS[64/LOOP-6'd1].state[`IDX(j)];
+				tx_hash[`IDX(j)] <= rx_state[`IDX(j)] + HASHERS[64/LOOP/MERGE-6'd1].state[`IDX(j)];
 			end
 		end
 	end
@@ -111,20 +112,58 @@ module sha256_transform #(
 
 endmodule
 
+//
+// Instanciate X units of sha256_digester with only the last one containing flops on the output
+//
+module sha256_unpipe # (
+	parameter MERGE=6'd1
+) (
+	input clk,
+	input [32*MERGE-1:0] k,
+	input [511:0] rx_w,
+	input [255:0] rx_state,
 
-module sha256_digester (clk, k, rx_w, rx_state, tx_w, tx_state);
+	output reg [511:0] tx_w,
+	output reg [255:0] tx_state
+);
 
-	input clk;
-	input [31:0] k;
-	input [511:0] rx_w;
-	input [255:0] rx_state;
+	genvar i;
 
-	output reg [511:0] tx_w;
-	output reg [255:0] tx_state;
+	generate
+		for (i = 0; i < MERGE ; i = i + 1) begin: HASHERS
+			wire [511:0] W;
+			wire [255:0] state;
+			sha256_digester U (
+				.clk(clk),
+				.k(k[32*(MERGE-1-i) +: 32]),
+				.rx_w((i==0) ? rx_w : HASHERS[i-1].W),
+				.rx_state((i==0) ? rx_state : HASHERS[i-1].state),
+				.tx_w_next(W),
+				.tx_state_next(state)
+			);
+		end
+	endgenerate
+	always @(posedge clk)
+	begin
+		tx_w <= HASHERS[MERGE-1].W;
+		tx_state <= HASHERS[MERGE-1].state;
+	end
+
+endmodule
+
+module sha256_digester (
+
+	input clk,
+	input [31:0] k,
+	input [511:0] rx_w,
+	input [255:0] rx_state,
+
+	output [511:0] tx_w_next,
+	output [255:0] tx_state_next
+);
 
 
 	wire [31:0] e0_w, e1_w, ch_w, maj_w, s0_w, s1_w;
-
 
 	e0	e0_blk	(rx_state[`IDX(0)], e0_w);
 	e1	e1_blk	(rx_state[`IDX(4)], e1_w);
@@ -137,21 +176,17 @@ module sha256_digester (clk, k, rx_w, rx_state, tx_w, tx_state);
 	wire [31:0] t2 = e0_w + maj_w;
 	wire [31:0] new_w = s1_w + rx_w[319:288] + s0_w + rx_w[31:0];
 	
+	assign tx_w_next[511:480] = new_w;
+	assign tx_w_next[479:0] = rx_w[511:32];
 
-	always @ (posedge clk)
-	begin
-		tx_w[511:480] <= new_w;
-		tx_w[479:0] <= rx_w[511:32];
-
-		tx_state[`IDX(7)] <= rx_state[`IDX(6)];
-		tx_state[`IDX(6)] <= rx_state[`IDX(5)];
-		tx_state[`IDX(5)] <= rx_state[`IDX(4)];
-		tx_state[`IDX(4)] <= rx_state[`IDX(3)] + t1;
-		tx_state[`IDX(3)] <= rx_state[`IDX(2)];
-		tx_state[`IDX(2)] <= rx_state[`IDX(1)];
-		tx_state[`IDX(1)] <= rx_state[`IDX(0)];
-		tx_state[`IDX(0)] <= t1 + t2;
-	end
+	assign tx_state_next[`IDX(7)] = rx_state[`IDX(6)];
+	assign tx_state_next[`IDX(6)] = rx_state[`IDX(5)];
+	assign tx_state_next[`IDX(5)] = rx_state[`IDX(4)];
+	assign tx_state_next[`IDX(4)] = rx_state[`IDX(3)] + t1;
+	assign tx_state_next[`IDX(3)] = rx_state[`IDX(2)];
+	assign tx_state_next[`IDX(2)] = rx_state[`IDX(1)];
+	assign tx_state_next[`IDX(1)] = rx_state[`IDX(0)];
+	assign tx_state_next[`IDX(0)] = t1 + t2;
 
 endmodule
 

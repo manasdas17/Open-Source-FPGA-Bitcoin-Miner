@@ -40,8 +40,21 @@ module fpgaminer_top (osc_clk);
 	parameter LOOP_LOG2 = 0;
 `endif
 
+// The MERGE_LKOG2 parameter determines how many SHA-256 stages to combine
+// into one pipe stage.
+// A value of 1 is the default and is the same as the normal behavior
+// Using a larger value will cause a clock speed drop, but on the other hand,
+// it will require less clock cycles and less pipe registers.
+`ifdef CONFIG_MERGE_LOG2
+	parameter MERGE_LOG2 = `CONFIG_MERGE_LOG2;
+`else
+	parameter MERGE_LOG2 = 0;
+`endif
+
 	// No need to adjust these parameters
 	localparam [5:0] LOOP = (6'd1 << LOOP_LOG2);
+	localparam [5:0] MERGE = (6'd1 << MERGE_LOG2);
+
 	// The nonce will always be larger at the time we discover a valid
 	// hash. This is its offset from the nonce that gave rise to the valid
 	// hash (except when LOOP_LOG2 == 0 or 1, where the offset is 131 or
@@ -71,7 +84,7 @@ module fpgaminer_top (osc_clk);
 	reg [5:0] cnt = 6'd0;
 	reg feedback = 1'b0;
 
-	sha256_transform #(.LOOP(LOOP)) uut (
+	sha256_transform #(.LOOP(LOOP), .MERGE(MERGE)) uut (
 		.clk(hash_clk),
 		.feedback(feedback),
 		.cnt(cnt),
@@ -79,7 +92,7 @@ module fpgaminer_top (osc_clk);
 		.rx_input(data),
 		.tx_hash(hash)
 	);
-	sha256_transform #(.LOOP(LOOP)) uut2 (
+	sha256_transform #(.LOOP(LOOP), .MERGE(MERGE)) uut2 (
 		.clk(hash_clk),
 		.feedback(feedback),
 		.cnt(cnt),
@@ -121,11 +134,11 @@ module fpgaminer_top (osc_clk);
 		reg reset = 1'b0;	// NOTE: Reset is not currently used in the actual FPGA; for simulation only.
 	`endif
 
-	assign cnt_next =  reset ? 6'd0 : (cnt + 6'd1) & (LOOP-6'd1);
+	assign cnt_next =  reset ? 6'd0 : (cnt + MERGE) & ((LOOP*MERGE)-6'd1);
 	// On the first count (cnt==0), load data from previous stage (no feedback)
-	// on 1..LOOP-1, take feedback from current stage
+	// otherwise, take feedback from current stage
 	// This reduces the throughput by a factor of (LOOP), but also reduces the design size by the same amount
-	assign feedback_next = (LOOP == 1) ? 1'b0 : (cnt_next != {(LOOP_LOG2){1'b0}});
+	assign feedback_next = (cnt_next != 6'd0);
 	assign nonce_next =
 		reset ? 32'd0 :
 		feedback_next ? nonce : (nonce + 32'd1);
