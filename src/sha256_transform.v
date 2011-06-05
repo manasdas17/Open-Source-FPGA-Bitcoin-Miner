@@ -130,30 +130,28 @@ module sha256_unpipe # (
 	genvar i;
 
 	generate
-		for (i = 0; i < MERGE ; i = i + 1) begin: HASHERS
-			wire [511:0] W;
-			wire [255:0] state;
+		for (i = 0; i < MERGE ; i = i + 1) begin: H
+			wire [511:0] W2;
+			wire [255:0] state2;
 			sha256_digester U (
-				.clk(clk),
 				.k(k[32*(MERGE-1-i) +: 32]),
-				.rx_w((i==0) ? rx_w : HASHERS[i-1].W),
-				.rx_state((i==0) ? rx_state : HASHERS[i-1].state),
-				.tx_w_next(W),
-				.tx_state_next(state)
+				.rx_w((i==0) ? rx_w : H[i-1].W),
+				.rx_state((i==0) ? rx_state : H[i-1].state),
+				.tx_w_next(W2),
+				.tx_state_next(state2)
 			);
 		end
 	endgenerate
 	always @(posedge clk)
 	begin
-		tx_w <= HASHERS[MERGE-1].W;
-		tx_state <= HASHERS[MERGE-1].state;
+		tx_w <= H[MERGE-1].W2;
+		tx_state <= H[MERGE-1].state2;
 	end
 
 endmodule
 
 module sha256_digester (
 
-	input clk,
 	input [31:0] k,
 	input [511:0] rx_w,
 	input [255:0] rx_state,
