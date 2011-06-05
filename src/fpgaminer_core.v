@@ -21,9 +21,10 @@
 
 
 `timescale 1ns/1ps
-
-module fpgaminer_top (osc_clk);
-
+//
+// Generic top level module
+//
+module fpgaminer_core #(
 	// The LOOP_LOG2 parameter determines how unrolled the SHA-256
 	// calculations are. For example, a setting of 1 will completely
 	// unroll the calculations, resulting in 128 rounds and a large, fast
@@ -34,23 +35,23 @@ module fpgaminer_top (osc_clk);
 	// And so on.
 	//
 	// Valid range: [0, 5]
-`ifdef CONFIG_LOOP_LOG2
-	parameter LOOP_LOG2 = `CONFIG_LOOP_LOG2;
-`else
-	parameter LOOP_LOG2 = 0;
-`endif
-
-// The MERGE_LKOG2 parameter determines how many SHA-256 stages to combine
-// into one pipe stage.
-// A value of 1 is the default and is the same as the normal behavior
-// Using a larger value will cause a clock speed drop, but on the other hand,
-// it will require less clock cycles and less pipe registers.
-`ifdef CONFIG_MERGE_LOG2
-	parameter MERGE_LOG2 = `CONFIG_MERGE_LOG2;
-`else
-	parameter MERGE_LOG2 = 0;
-`endif
-
+	parameter LOOP_LOG2=0,
+	// The MERGE_LKOG2 parameter determines how many SHA-256 stages to combine
+	// into one pipe stage.
+	// A value of 1 is the default and is the same as the normal behavior
+	// Using a larger value will cause a clock speed drop, but on the other hand,
+	// it will require less clock cycles and less pipe registers.
+	parameter MERGE_LOG2=0
+) (
+	input clk,
+	input reset,
+	input [255:0] midstate_in,
+	input [95:0] data_in,
+	output hash2_valid,
+	output [255:0] hash2,
+	output [31:0] golden_nonce,
+	output [31:0] nonce_adjust
+);
 	// No need to adjust these parameters
 	localparam [5:0] LOOP = (6'd1 << LOOP_LOG2);
 	localparam [5:0] MERGE = (6'd1 << MERGE_LOG2);
@@ -61,25 +62,13 @@ module fpgaminer_top (osc_clk);
 	// 66 respectively).
 	localparam [31:0] GOLDEN_NONCE_OFFSET = (32'd1 << (7 - LOOP_LOG2)) + 32'd1;
 
-	input osc_clk;
-
-
-	//// 
-	reg [255:0] state = 0;
-	reg [511:0] data = 0;
-	reg [31:0] nonce = 32'h00000000;
-
-
-	//// PLL
-	wire hash_clk;
-	`ifndef SIM
-		main_pll pll_blk (osc_clk, hash_clk);
-	`else
-		assign hash_clk = osc_clk;
-	`endif
+	reg [255:0] state ;
+	reg [127:0] data;
+	reg [31:0] nonce;
 
 
 	//// Hashers
+	reg [31:0] golden_nonce ;
 	wire [255:0] hash, hash2;
 	reg [5:0] cnt = 6'd0;
 	reg feedback = 1'b0;
@@ -89,7 +78,7 @@ module fpgaminer_top (osc_clk);
 		.feedback(feedback),
 		.cnt(cnt),
 		.rx_state(state),
-		.rx_input(data),
+		.rx_input({384'h000002800000000000000000000000000000000000000000000000000000000000000000000000000000000080000000, data}),
 		.tx_hash(hash)
 	);
 	sha256_transform #(.LOOP(LOOP), .MERGE(MERGE)) uut2 (
@@ -101,38 +90,12 @@ module fpgaminer_top (osc_clk);
 		.tx_hash(hash2)
 	);
 
-
-	//// Virtual Wire Control
-	reg [255:0] midstate_buf = 0, data_buf = 0;
-	wire [255:0] midstate_vw, data2_vw;
-
-	`ifndef SIM
-		virtual_wire # (.PROBE_WIDTH(0), .WIDTH(256), .INSTANCE_ID("STAT")) midstate_vw_blk(.probe(), .source(midstate_vw));
-		virtual_wire # (.PROBE_WIDTH(0), .WIDTH(256), .INSTANCE_ID("DAT2")) data2_vw_blk(.probe(), .source(data2_vw));
-	`endif
-
-
-	//// Virtual Wire Output
-	reg [31:0] golden_nonce = 0;
-	
-	`ifndef SIM
-		virtual_wire # (.PROBE_WIDTH(32), .WIDTH(0), .INSTANCE_ID("GNON")) golden_nonce_vw_blk (.probe(golden_nonce), .source());
-		virtual_wire # (.PROBE_WIDTH(32), .WIDTH(0), .INSTANCE_ID("NONC")) nonce_vw_blk (.probe(nonce), .source());
-	`endif
-
-
 	//// Control Unit
-	reg is_golden_ticket = 1'b0;
-	reg feedback_d1 = 1'b1;
+	wire is_golden_ticket;
+	reg feedback_d1;
 	wire [5:0] cnt_next;
 	wire [31:0] nonce_next;
 	wire feedback_next;
-	`ifndef SIM
-		wire reset;
-		assign reset = 1'b0;
-	`else
-		reg reset = 1'b0;	// NOTE: Reset is not currently used in the actual FPGA; for simulation only.
-	`endif
 
 	assign cnt_next =  reset ? 6'd0 : (cnt + MERGE) & ((LOOP*MERGE)-6'd1);
 	// On the first count (cnt==0), load data from previous stage (no feedback)
@@ -143,44 +106,22 @@ module fpgaminer_top (osc_clk);
 		reset ? 32'd0 :
 		feedback_next ? nonce : (nonce + 32'd1);
 
+	assign nonce_adjust = nonce - 128/(LOOP*MERGE) - 1;
+	assign is_golden_ticket = (hash2[255:224] == 32'h00000000) && hash2_valid;
 	
 	always @ (posedge hash_clk)
 	begin
-		`ifdef SIM
-			//midstate_buf <= 256'h2b3f81261b3cfd001db436cfd4c8f3f9c7450c9a0d049bee71cba0ea2619c0b5;
-			//data_buf <= 256'h00000000000000000000000080000000_00000000_39f3001b6b7b8d4dc14bfc31;
-			//nonce <= 30411740;
-		`else
-			midstate_buf <= midstate_vw;
-			data_buf <= data2_vw;
-		`endif
-
 		cnt <= cnt_next;
 		feedback <= feedback_next;
-		feedback_d1 <= feedback;
+		hash2_valid <= ~feedback;
 
 		// Give new data to the hasher
-		state <= midstate_buf;
-		data <= {384'h000002800000000000000000000000000000000000000000000000000000000000000000000000000000000080000000, nonce_next, data_buf[95:0]};
+		state <= midstate_in;
+		data <= {nonce_next, data_in};
 		nonce <= nonce_next;
 
-
 		// Check to see if the last hash generated is valid.
-		is_golden_ticket <= (hash2[255:224] == 32'h00000000) && !feedback_d1;
-		if(is_golden_ticket)
-		begin
-			// TODO: Find a more compact calculation for this
-			if (LOOP == 1)
-				golden_nonce <= nonce - 32'd131;
-			else if (LOOP == 2)
-				golden_nonce <= nonce - 32'd66;
-			else
-				golden_nonce <= nonce - GOLDEN_NONCE_OFFSET;
-		end
-`ifdef SIM
-		if (!feedback_d1)
-			$display ("nonce: %8x\nhash2: %64x\n", nonce, hash2);
-`endif
+		golden_nonce <= reset ? 32'b0 : is_golden_ticket ? nonce_adjust : golden_nonce;
 	end
 
 endmodule
