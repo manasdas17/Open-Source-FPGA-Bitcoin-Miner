@@ -47,7 +47,7 @@ module fpgaminer_core #(
 	input reset,
 	input [255:0] midstate_in,
 	input [95:0] data_in,
-	output hash2_valid,
+	output reg hash2_valid,
 	output [255:0] hash2,
 	output [31:0] golden_nonce,
 	output [31:0] nonce_adjust
@@ -74,7 +74,7 @@ module fpgaminer_core #(
 	reg feedback = 1'b0;
 
 	sha256_transform #(.LOOP(LOOP), .MERGE(MERGE)) uut (
-		.clk(hash_clk),
+		.clk(clk),
 		.feedback(feedback),
 		.cnt(cnt),
 		.rx_state(state),
@@ -82,7 +82,7 @@ module fpgaminer_core #(
 		.tx_hash(hash)
 	);
 	sha256_transform #(.LOOP(LOOP), .MERGE(MERGE)) uut2 (
-		.clk(hash_clk),
+		.clk(clk),
 		.feedback(feedback),
 		.cnt(cnt),
 		.rx_state(256'h5be0cd191f83d9ab9b05688c510e527fa54ff53a3c6ef372bb67ae856a09e667),
@@ -109,7 +109,7 @@ module fpgaminer_core #(
 	assign nonce_adjust = nonce - 128/(LOOP*MERGE) - 1;
 	assign is_golden_ticket = (hash2[255:224] == 32'h00000000) && hash2_valid;
 	
-	always @ (posedge hash_clk)
+	always @ (posedge clk)
 	begin
 		cnt <= cnt_next;
 		feedback <= feedback_next;
