@@ -25,7 +25,7 @@
 // Altera-specific top level module
 //
 module fpgaminer_top_altera (
-	input osc_clk;
+	input osc_clk
 );
 
 	// The LOOP_LOG2 parameter determines how unrolled the SHA-256
@@ -62,7 +62,7 @@ module fpgaminer_top_altera (
 	//// Virtual Wire Control
 	wire [255:0] midstate_vw;
 	wire  [95:0] data2_vw;
-	wire  [31:0] golden_nonce
+	wire  [31:0] golden_nonce, nonce;
 
 	virtual_wire # (.PROBE_WIDTH(0),  .WIDTH(256), .INSTANCE_ID("STAT")) midstate_vw_blk     (.probe(), .source(midstate_vw));
 	virtual_wire # (.PROBE_WIDTH(0),  .WIDTH(96),  .INSTANCE_ID("DAT2")) data2_vw_blk        (.probe(), .source(data2_vw));
@@ -82,7 +82,8 @@ module fpgaminer_top_altera (
 		.data_in(data2_vw),
 		.hash2_valid(),
 		.hash2(),
-		.golden_nonce(golden_nonce)
+		.golden_nonce(golden_nonce),
+		.nonce(nonce)
 	);
 
 endmodule

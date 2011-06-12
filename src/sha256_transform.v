@@ -131,21 +131,21 @@ module sha256_unpipe # (
 
 	generate
 		for (i = 0; i < MERGE ; i = i + 1) begin: H
-			wire [511:0] W2;
-			wire [255:0] state2;
+			wire [511:0] W;
+			wire [255:0] state;
 			sha256_digester U (
 				.k(k[32*(MERGE-1-i) +: 32]),
 				.rx_w((i==0) ? rx_w : H[i-1].W),
 				.rx_state((i==0) ? rx_state : H[i-1].state),
-				.tx_w_next(W2),
-				.tx_state_next(state2)
+				.tx_w_next(W),
+				.tx_state_next(state)
 			);
 		end
 	endgenerate
 	always @(posedge clk)
 	begin
-		tx_w <= H[MERGE-1].W2;
-		tx_state <= H[MERGE-1].state2;
+		tx_w <= H[MERGE-1].W;
+		tx_state <= H[MERGE-1].state;
 	end
 
 endmodule

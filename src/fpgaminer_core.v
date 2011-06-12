@@ -49,7 +49,8 @@ module fpgaminer_core #(
 	input [95:0] data_in,
 	output reg hash2_valid,
 	output [255:0] hash2,
-	output [31:0] golden_nonce,
+	output reg [31:0] golden_nonce,
+	output reg [31:0] nonce,
 	output [31:0] nonce_adjust
 );
 	// No need to adjust these parameters
@@ -64,12 +65,10 @@ module fpgaminer_core #(
 
 	reg [255:0] state ;
 	reg [127:0] data;
-	reg [31:0] nonce;
 
 
 	//// Hashers
-	reg [31:0] golden_nonce ;
-	wire [255:0] hash, hash2;
+	wire [255:0] hash;
 	reg [5:0] cnt = 6'd0;
 	reg feedback = 1'b0;
 
