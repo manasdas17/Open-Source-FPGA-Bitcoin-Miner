@@ -67,7 +67,10 @@ module fpgaminer_top_altera (
 	virtual_wire # (.PROBE_WIDTH(0),  .WIDTH(256), .INSTANCE_ID("STAT")) midstate_vw_blk     (.probe(), .source(midstate_vw));
 	virtual_wire # (.PROBE_WIDTH(0),  .WIDTH(96),  .INSTANCE_ID("DAT2")) data2_vw_blk        (.probe(), .source(data2_vw));
 	virtual_wire # (.PROBE_WIDTH(32), .WIDTH(0),   .INSTANCE_ID("GNON")) golden_nonce_vw_blk (.probe(golden_nonce), .source());
+`ifdef USE_NONC
+	// I use this for tracking progress, not needed for useful work
 	virtual_wire # (.PROBE_WIDTH(32), .WIDTH(0),   .INSTANCE_ID("NONC")) nonce_vw_blk        (.probe(nonce),        .source());
+`endif
 
 	fpgaminer_core #(
 		.LOOP_LOG2(LOOP_LOG2),
